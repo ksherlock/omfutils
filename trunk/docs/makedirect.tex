@@ -1,0 +1,39 @@
+\documentclass{article}
+\input macros
+
+\def\makedirect{\textbf{makedirect} }
+
+\begin{document}
+
+\SH{Name}
+\makedirect --- create a direct page/stack OMF segment.
+
+\SH{Synopsis}
+
+\makedirect [options]
+
+\SH{Description}
+
+\makedirect creates a direct page/stack OMF segment.  When linked into a program, this will
+specify the size of the stack space allocated to the program by the GS/OS loader.  By default \texttt{S16} and \texttt{EXE} programs are allocated 4K of stack space.  If more space 
+is needed, 
+\makedirect can be used to increase the allocation.  If less space is needed, \makedirect
+can be used to decrease the allocation (freeing up stack space for other uses).
+
+
+\SH{Options}
+
+\makedirect recognizes the following options:
+\begin{optionlist}
+	\item [-o file]
+	Specify the name of the output file.  The default output file name is ``direct.o''.
+	\item [-p number]
+	Specify the size of the stack segment.  This field is required.  Valid values are 
+	\texttt{\$0100}--\texttt{\$ffff}. Numbers may be entered in decimal or hexadecimal 
+	(with a leading \texttt{0x} or \texttt{\$}).
+	\item [-h]
+	Display help and version information.
+	
+\end{optionlist}
+
+\end{document}
