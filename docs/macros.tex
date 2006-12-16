@@ -1,0 +1,28 @@
+\usepackage{ae}
+\usepackage{relsize}
+\usepackage{mdwlist}
+
+\def\IIgs{II{\relsize{-2}GS} }
+\def\SH#1{\section*{#1}}
+
+\def\code#1{\texttt{#1}}
+
+\makeatletter
+\def\@optionlabel#1 #2\@@{\textbf{#1} \textit{#2}}
+
+\newenvironment{optionlist}{%
+  \begin{basedescript}{%
+    \desclabelstyle{\nextlinelabel}%
+    %\renewcommand{\makelabel}[1]{\bfseries ##1}%
+    \renewcommand{\makelabel}[1]{\@optionlabel ##1 \@@}%
+    \desclabelwidth{1in}%
+  }%
+}{%
+  \end{basedescript}%
+}
+\makeatother
+
+
+\pagestyle{empty}
+\parindent=0em
+\parskip=1ex
