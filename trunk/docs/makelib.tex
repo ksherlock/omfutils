@@ -1,0 +1,71 @@
+\documentclass{article}
+\input macros
+
+\def\makelib{\textbf{makelib} }
+
+\begin{document}
+
+\SH{Name}
+\makelib --- create, manipulate. and query OMF library files.
+
+\SH{Synopsis}
+
+\makelib [options] \textit{library file} [\textit{object files \dots}]
+
+\SH{Description}
+
+\makelib is a utility for creating and manipulating OMF library files.  \makelib can add, delete, and extract files from the library, as well as list the library contents.
+
+An OMF library file 
+(filetype \code{\$B2}, \code{LIB}) is a collection of OMF object files and a dictionary
+header.
+
+The dictionary header is stored in an OMF segment, kind \code{\$08}, Library Dictionary Segment.  The segment contains 3 \code{LCONST} records, described below.  All numbers are stored in little-endian format.  All strings are variable length, preceeded by a length byte.
+
+The first contains filename information.
+
+\par
+
+\begin{tabular}{p{8em} p{6em}  p{.5\textwidth}}
+\code{File Number} & word & Unique number for this file. Non-zero value.\\
+\code{File Name} & string & The name of the original OMF file.\\
+\end{tabular}
+
+The second contains symbol information.
+
+\begin{tabular}{p{8em} p{6em}  p{.5\textwidth}}
+\code{Name Offset} & long word & offset into the symbol name table. \\
+\code{File Number} & word & File in which this symbol was originally defined.\\
+\code{Private Flag} & word & Zero if this symbol is public, non-zero if this symbol is private. \\
+\code{Segment Offset} & long word & Absolute offset into the file to access the segment in which this symbol is defined.\\
+\end{tabular}
+
+The third contains symbol names and is sorted alphabetically.
+
+\begin{tabular}{p{8em} p{6em}  p{.5\textwidth}}
+\code{Symbol Name} & string & Name of the symbol \\
+\end{tabular}
+
+
+\SH{Options}
+
+\makelib recognizes the following options:
+\begin{optionlist}
+	\item [-a]	
+	Add files to the library, creating the library if necessary.  The files to be added should be
+	OMF object files (\textit{i.e.}, not linked).
+	\item [-d]
+	Delete the specified files from the library.
+	\item [-x]
+	Extract the specified files from the library.  The files will not deleted from the library
+	unless the -d flag is also specified.
+	\item [-t] 
+	Print the dictionary contents.  
+	\item [-v]
+	Be more verbose.
+	\item [-h]
+	Print usage and version information.
+\end{optionlist}
+
+
+\end{document}

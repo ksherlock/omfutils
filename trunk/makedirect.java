@@ -30,7 +30,7 @@ public class makedirect
         System.out.println("usage: makedirect [options]");
         System.out.println("options:");
 
-        System.out.println("\t-n name        segment name [STACKMIN]");
+        //System.out.println("\t-n name        segment name [STACKMIN]");
         System.out.println("\t-o objfile     object file name [direct.o]");
         System.out.println("\t-p size        size of segment (required)");
         System.out.println("\t-h             help");        
@@ -62,8 +62,8 @@ public class makedirect
     
     public static void main(String[] args)
     {
-        GetOpt go = new GetOpt(args, "n:o:p:h");
-        String fSegname = "STACKMIN";
+        GetOpt go = new GetOpt(args, "o:p:h");
+        //String fSegname = "STACKMIN";
         String fOutfile = "direct.o";
         int fSize = -1;
         
@@ -72,9 +72,11 @@ public class makedirect
         {
             switch(c)
             {
+            /*
             case 'n':
                 fSegname = go.Argument();
                 break;
+            */
             case 'o':
                 fOutfile = go.Argument();
                 break;
@@ -101,10 +103,11 @@ public class makedirect
         
         OMF_Segment s = new OMF_Segment();
         
-        s.SetSegmentName(fSegname);
+        s.SetSegmentName("~Direct");
         s.SetLoadName("~Direct");
         s.SetReservedSpace(fSize);
         s.SetKind(OMF.KIND_DP);
+        s.SetAttributes(OMF.KIND_PRIVATE);
         s.SetSegmentNumber(1);
         s.AddOpcode(new OMF_Eof());
         

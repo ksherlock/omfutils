@@ -14,7 +14,7 @@
 
 \SH{Description}
 
-\makeobj converts a binary file (such as image or sound data) to an OMF (object module format) file.  The OMF file can be linked and accessed as if it was externally declared.
+\makeobj converts a binary file (such as image or sound data) to an OMF (object module format) file.  The OMF file can be linked and the data accessed as if it was externally declared.
 
 \SH{Example}
 
@@ -44,10 +44,11 @@ extern char picture[];
 	Set the segment load name.  The default load name is blank.  The segment load name is used
 	for splitting large programs into multiple segments. 
 	\item [-k kind]
-	Set the segment kind.  Valid values are ``CODE'', ``DATA'', ``INIT'', or ``STACK''.  
-	The default kind is DATA.  Please note that DATA segments may cross bank boundaries when
-	loaded.  If your data is < 65,535 (\texttt{\$ffff}) bytes in length and you do not want it to cross
-	bank boundaries, specify the CODE kind. 
+	Set the segment kind.  Valid values are \tt{CODE}, \tt{DATA}, \tt{INIT}, or \tt{STACK}.  
+	The default kind is \tt{DATA}.  Please note that \tt{DATA} segments may cross bank 
+	boundaries when
+	loaded.  If your data is < 65,535 (\tt{\$ffff}) bytes in length and you do not want it to cross
+	bank boundaries, specify the \tt{CODE} kind. 
 	\item [-o file]
 	Set the output file name.  The default output file name is the same as the input filename, 
 	but with a ``.o'' extension.
