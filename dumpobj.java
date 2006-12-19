@@ -2,6 +2,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.ListIterator;
 
 import omf.*;
 
@@ -344,6 +345,94 @@ public class dumpobj
         return s;
     }
     
+    private static String format_arg(int operand, int size, int mode)
+    {
+        switch (mode & 0xfff0)
+        {
+        case mRelative:
+            switch(size)
+            {
+            case 1:
+                if ((operand & 0x80) == 0x80)
+                    return "*-$" + format_x(256 - operand, 2);
+                return "*+$" + format_x(2 + operand, 2);
+                
+            case 2:
+                if ((operand & 0x8000) == 0x8000)
+                    return "*-$" + format_x(65536 - operand, 2);
+                return "*+$" + format_x(3 + operand, 2);                
+            }
+            return "";
+            
+        case mBlockMove:
+            return "$" + format_x(operand >> 8,2) +",$" + format_x(operand & 0xff, 2);
+
+        default:
+            return format_arg("$" + format_x(operand, size * 2), mode);
+        }
+    }
+    
+    private static String format_arg(String base, int mode)
+    {
+        String args = "";
+        
+        switch(mode & 0xf000)
+        {
+        case mImmediate:
+            args = "#" + base;
+            break;
+            
+        case mDP:
+        case mAbsolute:
+        case mAbsoluteLong:                                
+            args = base;
+            break;
+
+        case mRelative:
+            args = base;
+            break;
+        case mBlockMove:
+            args = base; // 
+            break;
+           
+        case mDPIL:  
+        case mAbsoluteIL:
+            args = "[" + base + "]";
+            break;
+            
+        case mDPI:
+        case mAbsoluteI:
+            args = "(" + base;
+            if ((mode & m_S) == m_S)
+            {
+                mode &= (~m_S);
+                args += ",s";
+            }
+            if ((mode & m_X) == m_X)
+            {
+                mode &= (~m_X);
+                args += ",x";
+            }
+            args += ")";
+            break;                                                
+        
+        }
+        switch(mode & 0x0f00)
+        {
+        case m_X:
+            args += ",x";
+            break;
+        case m_Y:
+            args += ",y";
+            break;
+        case m_S:
+            args += ",s";
+        }                           
+        
+        return args;
+    }
+    
+    
     private static void disasm(OMF_Segment seg)
     {
         int pc = 0;
@@ -372,9 +461,11 @@ public class dumpobj
         }
         
         
-        Iterator<OMF_Opcode> iter = seg.Opcodes();
+        ListIterator<OMF_Opcode> iter = seg.Opcodes();
 
-        for (;iter.hasNext();)
+       
+        
+        while(iter.hasNext())
         {
             OMF_Opcode op = iter.next();
             switch(op.Opcode())
@@ -383,6 +474,16 @@ public class dumpobj
             case OMF.OMF_DS:
                 System.out.printf("\tds $%1$04x\t\t;%2$06x\n", op.CodeSize(), pc);
                 pc += op.CodeSize();
+                break;
+                
+            case OMF.OMF_GLOBAL:
+                System.out.printf("%1$s\tENTRY\n", op.toString());
+                break;
+            case OMF.OMF_LOCAL:
+                System.out.printf("%1$s\tANOP\n", op.toString());
+                break;
+            case OMF.OMF_ALIGN:
+                System.out.printf("\tALIGN $%1$04x\n", ((OMF_Align)op).Value());
                 break;
                 
             case OMF.OMF_LCONST:
@@ -411,147 +512,131 @@ public class dumpobj
                                                 
                         if (i + argsize >= size)
                         {
-                            System.out.printf("\tdc i1'$%1$02x'\t\t;%2$06x\n", opcode, pc);
-                            pc++;
-                            i++;
+                            
+                            if (i +1 == size)
+                            {
+                                boolean process = true;
+                                op = iter.next();
+                                if (op.CodeSize() == argsize) switch(op.Opcode())
+                                {
+                                case OMF.OMF_EXPR:
+                                case OMF.OMF_ZPEXPR:
+                                case OMF.OMF_BKEXPR:  
+                                case OMF.OMF_LEXPR:
+                                    args = format_expr((OMF_Expr)op);
+                                    break;
+
+                                case OMF.OMF_RELEXPR:
+                                    args = format_expr((OMF_RelExpr)op);
+                                    break;
+
+                                default : 
+                                    iter.previous();
+                                    process = false;
+                                }
+                                
+                                if (process)
+                                {
+                                    print_line(pc, to_opcode(opcode), args, format_x(opcode, 2));
+                                    pc += 1 + argsize;
+                                    i++;
+                                    continue;
+                                }
+                                
+                            }
+                            // TODO -- get next opcode, check if expression.
+                            for(;;)
+                            {
+                                
+                                System.out.printf("\tdc i1'$%1$02x'\t\t;%2$06x\n", opcode, pc);
+                                pc++;
+                                i++;
+                                if (i >= size) break;
+                                opcode = data[i]; 
+                            }
                             continue;
                         }
                         
-                        if (i + argsize < size)
+                        
+                        switch(argsize)
                         {
-                            switch(argsize)
-                            {
-                            case 1: 
-                                arg = OMF.Read8(data, i + 1,0);
-                                break;
-                            case 2:
-                                arg = OMF.Read16(data, i + 1,0);
-                                break;
-                            case 3:
-                                arg = OMF.Read24(data, i + 1,0);
-                                break;
-                            }
-                            switch(mode & 0xf000)
-                            {
-                            case mImmediate:
-                                args = "#$" + format_x(arg, argsize * 2);
-                                break;
-                                
-                            case mDP:
-                            case mAbsolute:
-                            case mAbsoluteLong:                                
-                                args = "$" + format_x(arg, argsize * 2);
-                                break;
-       
-                            case mRelative:
-                                // TODO...
-                                break;
-                            case mBlockMove:
-                                // TODO -- verify if order is correct...
-                                args = "$" + format_x(arg >> 8,2) +",$" + format_x(arg & 0xff, 2);
-                                break;
-                               
-                            case mDPIL:  
-                            case mAbsoluteIL:
-                                args = "[$" + format_x(arg, argsize * 2) + "]";
-                                break;
-                                
-                            case mDPI:
-                            case mAbsoluteI:
-                                args = "($" + format_x(arg, argsize * 2);
-                                if ((mode & m_S) == m_S)
-                                {
-                                    mode &= (~m_S);
-                                    args += ",s";
-                                }
-                                if ((mode & m_X) == m_X)
-                                {
-                                    mode &= (~m_X);
-                                    args += ",x";
-                                }
-                                args += ")";
-                                break;                                                
-                            
-                            }
-                            switch(mode & 0x0f00)
-                            {
-                            case m_X:
-                                args += ",x";
-                                break;
-                            case m_Y:
-                                args += ",y";
-                                break;
-                            case m_S:
-                                args += ",s";
-                            }                           
-                            
-                            if (opcode == 0xc2) // rep... go to 16 bit a/x?
-                            {
-                                if ((arg & 0x20) == 0x20)
-                                {
-                                    System.out.println("\tLONGA ON");
-                                    fM = true;
-                                }
-                                if ((arg & 0x10) == 0x10)  
-                                {
-                                    System.out.println("\tLONGI ON");
-                                    fX = true;
-                                }                                
-                            }
-                            else if (opcode == 0xe2)
-                            {
-                                if ((arg & 0x20) == 0x20)
-                                {
-                                    System.out.println("\tLONGA OFF");
-                                    fM = false;
-                                }
-                                if ((arg & 0x10) == 0x10)  
-                                {
-                                    System.out.println("\tLONGI OFF");
-                                    fX = false;
-                                }  
-                            }
-                            else if (opcode == 0xfb) // xce
-                            {
-                                if (i > 0)
-                                {
-                                    if (data[i-1] == 0x18)
-                                    {
-                                        // clc/xce --> go to native, but still 8 bit mx registers.
-                                        
-                                    }
-                                    else if (data[i-1] == 0x38)
-                                    {
-                                        //sec/xce --> go emulation
-                                        System.out.println("\tLONGA OFF");
-                                        System.out.println("\tLONGI OFF");
-                                        fM = fX = false;
-                                    }
-                                }
-                            }
-                            String hexbytes = format_x(opcode, 2);
-                            switch(argsize)
-                            {
-                            case 3:
-                                hexbytes += " " +format_x(arg & 0xff ,2);
-                                arg = arg >> 8;
-                            case 2:
-                                hexbytes += " " +format_x(arg & 0xff ,2);
-                                arg = arg >> 8;
-                            case 1:
-                                hexbytes += " " +format_x(arg & 0xff ,2);
-                            }
-                            System.out.printf("\t%1$s %2$-20s ;%3$06x:  %4$s\n", 
-                                    opcodes.substring(opcode * 3, opcode * 3 + 3),
-                                    args, pc, hexbytes);
-
-                            pc += 1 + argsize;
-                            i += 1 + argsize;
+                        case 1: 
+                            arg = OMF.Read8(data, i + 1,0);
+                            break;
+                        case 2:
+                            arg = OMF.Read16(data, i + 1,0);
+                            break;
+                        case 3:
+                            arg = OMF.Read24(data, i + 1,0);
+                            break;
                         }
+                        
+                        args = format_arg(arg, argsize, mode);
+                                             
+                        if (opcode == 0xc2) // rep... go to 16 bit a/x?
+                        {
+                            if ((arg & 0x20) == 0x20)
+                            {
+                                System.out.println("\tLONGA ON");
+                                fM = true;
+                            }
+                            if ((arg & 0x10) == 0x10)  
+                            {
+                                System.out.println("\tLONGI ON");
+                                fX = true;
+                            }                                
+                        }
+                        else if (opcode == 0xe2)
+                        {
+                            if ((arg & 0x20) == 0x20)
+                            {
+                                System.out.println("\tLONGA OFF");
+                                fM = false;
+                            }
+                            if ((arg & 0x10) == 0x10)  
+                            {
+                                System.out.println("\tLONGI OFF");
+                                fX = false;
+                            }  
+                        }
+                        else if (opcode == 0xfb) // xce
+                        {
+                            if (i > 0)
+                            {
+                                if (data[i-1] == 0x18)
+                                {
+                                    // clc/xce --> go to native, but still 8 bit mx registers.
+                                    
+                                }
+                                else if (data[i-1] == 0x38)
+                                {
+                                    //sec/xce --> go emulation
+                                    System.out.println("\tLONGA OFF");
+                                    System.out.println("\tLONGI OFF");
+                                    fM = fX = false;
+                                }
+                            }
+                        }
+                        String hexbytes = format_x(opcode, 2);
+                        switch(argsize)
+                        {
+                        case 3:
+                            hexbytes += " " +format_x(arg & 0xff ,2);
+                            arg = arg >> 8;
+                        case 2:
+                            hexbytes += " " +format_x(arg & 0xff ,2);
+                            arg = arg >> 8;
+                        case 1:
+                            hexbytes += " " +format_x(arg & 0xff ,2);
+                        }
+                        
+                        print_line(pc, to_opcode(opcode), args, hexbytes);
+                        
+
+
+                        pc += 1 + argsize;
+                        i += 1 + argsize;
                     }
-                    
-                    
-                    
                 }
                 break;
                 
@@ -566,6 +651,96 @@ public class dumpobj
         
         
     }
+    
+    private static String to_opcode(int opcode)
+    {
+        return opcodes.substring(opcode * 3, opcode * 3 + 3);
+    }
+    
+    private static String format_expr(OMF_Expr expr)
+    {
+        return format_expr(expr.Expression());
+    }
+    private static String format_expr(OMF_RelExpr expr)
+    {        
+        return format_expr(expr.Expression());
+    }
+    private static String format_expr(ArrayList expr)
+    {
+        // TODO -- support all ops, make sure in correct order of operation.
+        
+       ArrayList<String> stack = new ArrayList<String>();
+       
+       int size = expr.size();
+       int i;
+       int top = 0;
+       for (i = 0; i < size; i++)
+       {
+           Object o = expr.get(i);
+           if (o instanceof OMF_Label)
+           {
+               stack.add(o.toString());
+               top++;
+               continue;
+           }
+           else if (o instanceof OMF_Number)
+           {
+               int v = ((OMF_Number)o).Value();
+               
+               if (v < 0)
+               {
+                   Object o2 = expr.get(i + 1);
+                   if ((o2 instanceof Integer) && ((Integer)o2).intValue() == OMF_Expression.EXPR_SHIFT)
+                   {
+                       stack.add(Integer.toString(v));
+                       top++;
+                       continue;
+                   }
+               }
+               
+               
+               stack.add( "$" + format_x(v, 4) );
+               top++;
+               continue;
+           }
+           else if (o instanceof Integer)
+           {
+               Integer mathop = (Integer)o;
+               switch(mathop.intValue())
+               {
+               case OMF_Expression.EXPR_ADD:
+                   {
+                       String a,b;
+                       a = stack.remove(--top);
+                       b = stack.remove(--top);
+                       stack.add(b + "+" + a);
+                       top++;
+                       break;
+                   }
+               case OMF_Expression.EXPR_SHIFT:
+                   {
+                       String a,b;
+                       a = stack.remove(--top);
+                       b = stack.remove(--top);
+                       stack.add(b + "|" + a);
+                       top++;
+                       break;                   
+                   }
+               }
+               
+           }
+       }
+       
+       return stack.get(top - 1);
+
+    }
+    
+    private static void print_line(int pc, String opcode, String operand, String bytes)
+    {
+        System.out.printf("\t%1$s %2$-30s ; %3$06x:  %4$s\n",
+                opcode, operand, pc, bytes);
+    }
+    
     private static final char hexcodes[] =
     {
         '0', '1', '2', '3', 
