@@ -83,23 +83,23 @@ public class lseg
             
             offset = 0;
             
-            i = ByteReader.Read8(data, offset++, 0);
+            i = OMF.Read8(data, offset++, 0);
             
             if (i == 0x82) // debug name ?
             {
                 if (offset + 3 > length) break;
-                int branch = ByteReader.Read16(data, offset, 0);
+                int branch = OMF.Read16(data, offset, 0);
                 offset += 2;
                 if ((branch & 0x8000) == 0x8000) break;
                 
-                if (ByteReader.Read16(data, offset, 0) != 0x7771)
+                if (OMF.Read16(data, offset, 0) != 0x7771)
                     break;
                 
                 offset += branch;
                 
                 if (offset >= length) break;
                 
-                i = ByteReader.Read8(data, offset++, 0);           
+                i = OMF.Read8(data, offset++, 0);           
             }
             
             if (i == 0xf4) // stack check ?
@@ -108,7 +108,7 @@ public class lseg
                 // 3-byte LEXPR to ~CHECKSTACK
                 if (length - offset != 3) break;
                 
-                if (ByteReader.Read8(data, offset +2, 0) != 0x22)
+                if (OMF.Read8(data, offset +2, 0) != 0x22)
                     break;
                 
                 op = ops.next();
@@ -140,7 +140,7 @@ public class lseg
                 
                 offset = 0;
                 
-                i = ByteReader.Read8(data, offset++, 0);
+                i = OMF.Read8(data, offset++, 0);
                
             }
 
@@ -148,15 +148,15 @@ public class lseg
 
             if (i != 0x3b) break;
                 
-            i = ByteReader.Read8(data, offset++, 0);
+            i = OMF.Read8(data, offset++, 0);
             if (i != 0x38) break;
             
-            i = ByteReader.Read8(data, offset++, 0);
+            i = OMF.Read8(data, offset++, 0);
             if (i != 0xe9) break;
             
-            int stack = ByteReader.Read16(data, offset, 0);
+            int stack = OMF.Read16(data, offset, 0);
             offset += 2;
-            i = ByteReader.Read8(data, offset++, 0);
+            i = OMF.Read8(data, offset++, 0);
             if (i != 0x1b) break;                
             
             return stack;
