@@ -1,7 +1,19 @@
+import java.io.BufferedReader;
+import java.io.DataInputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.ListIterator;
 
 import omf.*;
@@ -13,6 +25,17 @@ import omf.*;
 
 public class dumpobj
 {
+    private HashMap<Integer, String> fTools;
+    private HashMap<Integer, String> fProdos;
+    private HashMap<Integer, String> fGSOS;
+    
+    
+    private dumpobj()
+    {
+        fTools = load_tools();
+        fGSOS = load_gsos();
+        fProdos = null;       
+    }
 
     private static void usage()
     {
@@ -36,6 +59,9 @@ public class dumpobj
        boolean fHeaderOnly = false;
        boolean fHexDump = true;
        GetOpt go = new GetOpt(args, "DHdh");
+       
+       dumpobj self = null;
+       
        
        int fDisasm = 0;
        
@@ -79,6 +105,9 @@ public class dumpobj
                System.err.printf("Invalid OMF File: %1$s\n", args[0]);
                return;
            }
+           
+           if (fDisasm > 0) self = new dumpobj();
+           
            for (Iterator<OMF_Segment> iter = segments.iterator(); iter.hasNext(); )
            {
                OMF_Segment segment = iter.next();
@@ -93,9 +122,10 @@ public class dumpobj
                
                if (!fHeaderOnly)
                {
-                   if (fDisasm > 1 || fDisasm == 1 && segment.Kind() == OMF.KIND_CODE)
+                   int kind = segment.Kind();
+                   if (fDisasm > 1 || fDisasm == 1 && (kind == OMF.KIND_CODE || kind == OMF.KIND_INIT))
                    {
-                       disasm(segment);
+                       self.disasm(segment);
                    }
                    else
                    {
@@ -336,13 +366,17 @@ public class dumpobj
         }
     }    
     
-    private static String format_x(int n, int length)
+    private static String format_x2(int n, int length)
     {
         String s = Integer.toHexString(n);
         while(s.length() < length)
             s = "0" + s;
         
         return s;
+    }
+    private static String format_x(int n, int length)
+    {
+        return "$" + format_x2(n, length);
     }
     
     private static String format_arg(int operand, int size, int mode)
@@ -354,21 +388,21 @@ public class dumpobj
             {
             case 1:
                 if ((operand & 0x80) == 0x80)
-                    return "*-$" + format_x(256 - operand, 2);
-                return "*+$" + format_x(2 + operand, 2);
+                    return "*-" + format_x(256 - operand, 2);
+                return "*+" + format_x(2 + operand, 2);
                 
             case 2:
                 if ((operand & 0x8000) == 0x8000)
-                    return "*-$" + format_x(65536 - operand, 2);
-                return "*+$" + format_x(3 + operand, 2);                
+                    return "*-" + format_x(65536 - operand, 2);
+                return "*+" + format_x(3 + operand, 2);                
             }
             return "";
             
         case mBlockMove:
-            return "$" + format_x(operand >> 8,2) +",$" + format_x(operand & 0xff, 2);
+            return format_x(operand >> 8,2) + "," + format_x(operand & 0xff, 2);
 
         default:
-            return format_arg("$" + format_x(operand, size * 2), mode);
+            return format_arg(format_x(operand, size * 2), mode);
         }
     }
     
@@ -433,12 +467,14 @@ public class dumpobj
     }
     
     
-    private static void disasm(OMF_Segment seg)
+    private void disasm(OMF_Segment seg)
     {
         int pc = 0;
         boolean fX = true;
         boolean fM = true;
 
+        BitSet branches = new BitSet();
+        
         String type;
         
         if (seg.Private())
@@ -472,18 +508,32 @@ public class dumpobj
             {
             
             case OMF.OMF_DS:
-                System.out.printf("\tds $%1$04x\t\t;%2$06x\n", op.CodeSize(), pc);
+                print_line(pc, "ds", format_x(op.CodeSize(), 2), "");
                 pc += op.CodeSize();
                 break;
+            case OMF.OMF_EQU:
+                {
+                    OMF_Equ e = (OMF_Equ)op;
+                    print_line(e.toString(), "equ", format_expr(e.Expression()));
+                }
+                break;
+
+            case OMF.OMF_GEQU:
+            {
+                OMF_Equ e = (OMF_Equ)op;
+                print_line(e.toString(), "gequ", format_expr(e.Expression()));
+            }
+            break;                
+                
                 
             case OMF.OMF_GLOBAL:
-                System.out.printf("%1$s\tENTRY\n", op.toString());
+                print_line(op.toString(), "entry", "");
                 break;
             case OMF.OMF_LOCAL:
-                System.out.printf("%1$s\tANOP\n", op.toString());
+                print_line(op.toString(), "anop", "");
                 break;
             case OMF.OMF_ALIGN:
-                System.out.printf("\tALIGN $%1$04x\n", ((OMF_Align)op).Value());
+                print_line("", "align", format_x( ((OMF_Align)op).Value(), 4));
                 break;
                 
             case OMF.OMF_LCONST:
@@ -492,12 +542,18 @@ public class dumpobj
                     int i = 0;
                     byte[] data =((OMF_Const)op).Data();
                     
-                    while (i < size)
+loop:                    while (i < size)
                     {
                         int opcode = data[i] & 0xff;
+                        
+                       
                         int mode = modes[opcode];
                         int argsize = mode & 0x000f;
-                        // TODO -- check M/X bits.
+
+                        if (branches.get(pc))
+                            System.out.println();
+                        
+                        // adjust operand size if m/x bits apply.
                         if ( ((mode & m_I) == m_I) && fX)
                         {
                             argsize++;
@@ -512,7 +568,7 @@ public class dumpobj
                                                 
                         if (i + argsize >= size)
                         {
-                            
+                            // TODO  -- check for mvn/mvp, handle as special case.
                             if (i +1 == size)
                             {
                                 boolean process = true;
@@ -537,18 +593,17 @@ public class dumpobj
                                 
                                 if (process)
                                 {
-                                    print_line(pc, to_opcode(opcode), args, format_x(opcode, 2));
+                                    print_line(pc, to_opcode(opcode), args, format_x2(opcode, 2));
                                     pc += 1 + argsize;
                                     i++;
                                     continue;
                                 }
                                 
                             }
-                            // TODO -- get next opcode, check if expression.
+
                             for(;;)
                             {
-                                
-                                System.out.printf("\tdc i1'$%1$02x'\t\t;%2$06x\n", opcode, pc);
+                                print_line(pc, "dc", "i1'" + format_x(opcode,2) + "'", format_x2(opcode, 2));
                                 pc++;
                                 i++;
                                 if (i >= size) break;
@@ -570,11 +625,35 @@ public class dumpobj
                             arg = OMF.Read24(data, i + 1,0);
                             break;
                         }
-                        
-                        args = format_arg(arg, argsize, mode);
-                                             
-                        if (opcode == 0xc2) // rep... go to 16 bit a/x?
+                                               
+                        switch(opcode)
                         {
+                        case 0x40: // rti
+                        case 0x60: // rts
+                        case 0x6b: // rtl
+                            branches.set(pc +1);
+                            break;
+                            
+                        case 0x90: // bxx
+                        case 0xb0:
+                        case 0xf0:
+                        case 0x30:
+                        case 0xd0:
+                        case 0x10:
+                        case 0x80:
+                        case 0x50:
+                        case 0x70:
+                            if (arg < 0x80) branches.set(pc + arg + 2);
+                            else branches.set(pc + 0x100 - arg);
+                            break;
+                            
+                        case 0x82: //brl
+                            // TODO -- check for debug names.
+                            if (arg < 0x8000) branches.set(pc + 3 + arg);
+                            else branches.set(pc + 0x10000 - arg);
+                            break;
+                            
+                        case 0xc2: // rep
                             if ((arg & 0x20) == 0x20)
                             {
                                 System.out.println("\tLONGA ON");
@@ -584,10 +663,9 @@ public class dumpobj
                             {
                                 System.out.println("\tLONGI ON");
                                 fX = true;
-                            }                                
-                        }
-                        else if (opcode == 0xe2)
-                        {
+                            }  
+                            break;
+                        case 0xe2:
                             if ((arg & 0x20) == 0x20)
                             {
                                 System.out.println("\tLONGA OFF");
@@ -597,10 +675,9 @@ public class dumpobj
                             {
                                 System.out.println("\tLONGI OFF");
                                 fX = false;
-                            }  
-                        }
-                        else if (opcode == 0xfb) // xce
-                        {
+                            }
+                            break;
+                        case 0xfb: //xce
                             if (i > 0)
                             {
                                 if (data[i-1] == 0x18)
@@ -616,18 +693,98 @@ public class dumpobj
                                     fM = fX = false;
                                 }
                             }
+                            break;
+                            
+                        case 0xa2: // ldx #
+                            if (fX && fTools != null)
+                            {
+                                // check for 22 00 00 e1
+                                if (size > i + 2 + 4)
+                                {
+                                    if (data[i + 3] == 0x22 && OMF.Read24(data, i + 4, 0) == kTOOL_STACK)
+                                    {
+                                        String s = fTools.get(new Integer(arg));
+                                        if (s != null)
+                                        {
+                                            print_line(pc, s, "", "");
+                                            pc += 7;
+                                            i += 7;
+                                            continue loop;   
+                                        }
+                                        
+                                        
+                                    }
+                                }
+                            }
+                            break;
+                        case 0x22: // JSL ... check if GS/OS call...
+                            if (arg == kGSOS_INLINE)
+                            {
+                                // TODO check for 6 bytes or 2 bytes + 1 expression or 0 bytes + 2 expression
+                                if (size > i + 3 + 6)
+                                {
+                                    int a,b;
+                                    String s = null;
+                                    a = OMF.Read16(data, i + 4, 0);
+                                    b = OMF.Read32(data, i + 6, 0);
+                                    if (fGSOS != null) s = fGSOS.get(a);
+                                    
+                                    if (s == null) s = "_GSOS_" + format_x2(a, 4);
+                                     
+                                    print_line(pc, s, format_x(b, 8),"");
+                                    pc += 10;
+                                    i += 10;
+                                    continue loop;
+
+                                }
+                                else if (size > i + 3 + 2)
+                                {
+                                    
+                                }
+                                else if (size == i + 1)
+                                {
+                                    
+                                }
+                                
+                                
+                            }
+                            break;
+                         
+                        case 0x00:  // BRK -- treat long runs of 0s as a DS
+                            if (arg == 0)
+                            {
+                            
+                                int j = i + 2 ;
+                                for (; j < size; j++)
+                                {
+                                    if (data[j] != 0) break;
+                                }
+                                int dsize = j - i;
+                                if (dsize > 2)
+                                {
+                                    print_line(pc, "ds", format_x(dsize, 4),"");
+                                    i += dsize;
+                                    pc += dsize;
+                                    continue loop;
+                                }
+                            }
+                            break;
+
                         }
-                        String hexbytes = format_x(opcode, 2);
+                        
+                        args = format_arg(arg, argsize, mode);
+                        
+                        String hexbytes = format_x2(opcode, 2);
                         switch(argsize)
                         {
                         case 3:
-                            hexbytes += " " +format_x(arg & 0xff ,2);
+                            hexbytes += " " +format_x2(arg & 0xff ,2);
                             arg = arg >> 8;
                         case 2:
-                            hexbytes += " " +format_x(arg & 0xff ,2);
+                            hexbytes += " " +format_x2(arg & 0xff ,2);
                             arg = arg >> 8;
                         case 1:
-                            hexbytes += " " +format_x(arg & 0xff ,2);
+                            hexbytes += " " +format_x2(arg & 0xff ,2);
                         }
                         
                         print_line(pc, to_opcode(opcode), args, hexbytes);
@@ -699,7 +856,7 @@ public class dumpobj
                }
                
                
-               stack.add( "$" + format_x(v, 4) );
+               stack.add(format_x(v, 4) );
                top++;
                continue;
            }
@@ -717,6 +874,24 @@ public class dumpobj
                        top++;
                        break;
                    }
+               case OMF_Expression.EXPR_SUB:
+                   {
+                       String a,b;
+                       a = stack.remove(--top);
+                       b = stack.remove(--top);
+                       stack.add(b + "-" + a);
+                       top++;
+                       break;
+                   }
+               case OMF_Expression.EXPR_MUL:
+                   {
+                       String a,b;
+                       a = stack.remove(--top);
+                       b = stack.remove(--top);
+                       stack.add(b + "*" + a);
+                       top++;
+                       break;
+                   }               
                case OMF_Expression.EXPR_SHIFT:
                    {
                        String a,b;
@@ -737,9 +912,159 @@ public class dumpobj
     
     private static void print_line(int pc, String opcode, String operand, String bytes)
     {
-        System.out.printf("\t%1$s %2$-30s ; %3$06x:  %4$s\n",
-                opcode, operand, pc, bytes);
+        System.out.printf("\t%1$-4s %2$-30s ; %3$06x:  %4$s\n",
+                opcode, operand, pc, bytes);       
     }
+    
+    private static void print_line(String lab, String opcode, String operand)
+    {
+        System.out.printf("%1$s\t%2$-4s %3$s\n",
+                lab, opcode, operand);
+    }
+    
+    
+    private static HashMap<Integer, String>load_file(File f)
+    {
+        HashMap<Integer, String> map = null;
+        boolean ok;
+        
+        try
+        {
+            RandomAccessFile raf = new RandomAccessFile(f, "r");
+
+            map = new HashMap<Integer, String>();
+            
+            for(;;)
+            {
+                int c;
+                String line = raf.readLine();
+                if (line == null) break;
+                c = line.charAt(0);
+                if (c == ';') continue;
+                if (c == '#') continue;
+                line = line.trim();
+                if (line.length() == 0) continue;
+                /*
+                 * xxxx [a-zA-Z0-9]
+                 * 
+                 */
+                int tn = 0;
+                ok = true;
+                int i;
+                for (i = 0; i < 4; i++)
+                {
+                    c = line.charAt(i);
+                    switch(c)
+                    {
+                    case '0':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                    case '6':
+                    case '7':
+                    case '8':
+                    case '9':
+                        tn = tn << 4 | (c - '0');
+                        break;
+                    case 'a':
+                    case 'b':
+                    case 'c':
+                    case 'd':
+                    case 'e':
+                    case 'f':
+                        tn = tn << 4 | (c - 'a' + 10);
+                        break;
+                    case 'A':
+                    case 'B':
+                    case 'C':
+                    case 'D':
+                    case 'E':
+                    case 'F':
+                        tn = tn << 4 | (c - 'A' + 10);
+                        break;
+                        
+                    default: ok = false;
+                    }
+                    if (!ok) break;
+                    
+                }
+                if (!ok) continue;
+                
+                for (;;)
+                {
+                    c = line.charAt(i);
+                    if (c == ' ' || c == '\t') i++;
+                    else break;
+                }
+                String s = line.substring(i);
+                if (s.length() == 0) continue;
+                
+                map.put(new Integer(tn), "_" + s);
+            }           
+        }
+        catch (Exception e)
+        {
+        }
+        
+        if (map.size() == 0) map = null;
+        return map;        
+    }
+    
+    private static HashMap<Integer, String>load_gsos()
+    {
+        String paths[] =
+        {
+            "/etc/gsos.txt",
+            "/usr/etc/gsos.txt",
+            "/usr/local/etc/gsos.txt",
+            "gsos.txt"
+        };
+        
+        HashMap<Integer, String> map = null;
+               
+        File f;
+        
+        for (String s: paths)
+        {
+            f = new File(s);
+            if (f.exists())
+            {
+                map = load_file(f);
+                if (map != null) return map;
+            }
+        }
+        return null;
+    }
+    
+    
+    private static HashMap<Integer, String>load_tools()
+    {
+        String paths[] =
+        {
+            "/etc/tools.txt",
+            "/usr/etc/tools.txt",
+            "/usr/local/etc/tools.txt",
+            "tools.txt"
+        };
+        
+        HashMap<Integer, String> map = null;
+               
+        File f;
+        
+        for (String s: paths)
+        {
+            f = new File(s);
+            if (f.exists())
+            {
+                map = load_file(f);
+                if (map != null) return map;
+            }
+        }
+        return null;
+    }
+    
     
     private static final char hexcodes[] =
     {
@@ -1164,5 +1489,22 @@ public class dumpobj
         3 | mAbsoluteLong | m_X,        // ff sbc >abs,x      
 
     };
+    
+    private static final String paths[] = 
+    {
+        "",
+        "/usr/local/etc",
+        "/usr/etc",
+        "/etc"
+    };
+    
+    
+    private static final int kGSOS_INLINE =     0xe100a8;    /* gs/os inline entry */
+    private static final int kGSOS_STACK =      0xe100b0;    /* gs/os stack entry */
+    private static final int kPRODOS_MLI =      0xbf00;      /* prodos 8 mli inline */
+    private static final int kTOOL_STACK =      0xe10000;    /* toolbox stack entry */
+    private static final int kTOOL_STACK_ALT =  0xe10004;    /* 2nd toolbox stack entry */
+
+
     
 }

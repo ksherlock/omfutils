@@ -1,0 +1,39 @@
+\documentclass{article}
+\input macros
+
+\def\dumpobj{\textbf{dumpobj} }
+
+\begin{document}
+
+\SH{Name}
+\dumpobj --- display OMF file contents.
+
+\SH{Synopsis}
+\dumpobj [options] \it{omf-file} [\it{segment\_name \dots}]
+
+\SH{Description}
+
+\dumpobj dumps header and opcode information from an OMF file.  If segment names are specified, 
+only those segments will be dumped.  If no segment names are specified, all segments will be dumped.
+
+\SH{Options}
+
+\dumpobj recognizes the following options:
+\begin{optionlist}
+	\item [-d]
+	Disassemble CODE and INIT segments.  If specified twice (\it{i.e.} -dd), all segments will
+	be disassembled.
+	\item [-h]
+	Display usage and version information.
+	\item[-D]
+	Do not do a hexdump of CONST, LCONST, or SUPER record data.
+	\item[-H]
+	Only the header information will be displayed.
+	
+\end{optionlist}
+
+\SH{Files}
+
+When disassembling data, \dumpobj will attempt to interpret toolbox and GS/OS calls.  To do so, it attempts to open files called ``tools.txt'' and ``gsos.txt'' located in /etc, /usr/etc, /usr/local/etc/, or the current directory.
+
+\end{document}
