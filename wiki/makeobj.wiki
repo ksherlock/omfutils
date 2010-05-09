@@ -2,7 +2,7 @@
 
 == NAME ==
 
-mkobj -- convert a binary file to an OMF segment.
+makeobj -- convert a binary file to an OMF segment.
 
 == SYNOPSIS ==
 
