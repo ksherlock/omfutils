@@ -1,0 +1,13 @@
+#summary makeobj manual page
+
+== Usage ==
+
+`makeobj [options] infile`
+
+== Options ==
+|| `-a align` || set alignment (must be power of 2 ||
+|| `-n name` || set segment name ||
+|| `-l name`  || set load name ||
+|| `-t kind` || set segment kind  (CODE, DATA, INIT, or STACK).  Default is DATA ||
+|| `-o objfile` || set output file name.  Default is _infile_.o ||
+|| `-h` || help ||
