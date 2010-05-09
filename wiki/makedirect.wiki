@@ -12,4 +12,4 @@ makedirect -- create an OMF direct page/stack segment.
 
 || `-o outfile` || Set the output file name.  Default is `direct.o`. ||
 || `-p size` || Specify the segment size (required). ||
-|| `-h`` || Show help information. ||
+|| `-h` || Show help information. ||
